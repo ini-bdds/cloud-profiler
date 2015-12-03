@@ -1,0 +1,18 @@
+{
+	"instance_types": [
+	{"override": ["$threads=8"],
+	 "bid": "1", 
+	 "type": "r3.xlarge", 
+	 "acquisition": "spot"
+	 }, 
+	 {"override": ["$threads=8"], 
+	 "bid": "1", 
+	 "type": "c3.2xlarge", 
+	 "acquisition": "spot"}
+	 ], 
+	 "executable": "example-workload.sh", 
+	 "workloads": {}, 
+	 "name": "Example Workload", 
+	 "configurations": {},
+	 "input_dir": "/home/ubuntu/profiler/client/example-workload/"
+}
