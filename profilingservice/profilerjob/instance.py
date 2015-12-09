@@ -24,10 +24,10 @@ from db_manager import DBManager
 
 class Instance():
     """
-    This class is used to interact with a profile worker node. The class includes
-    the ability to launch new instance requests and will wait for the resource
-    to be fulfilled. The ability to deploy jobs and collect the resulting 
-    profiles is also included in this class.
+    This class is used to interact with a profile worker node. The class 
+    includes the ability to launch new instance requests and will wait for 
+    the resource to be fulfilled. The ability to deploy jobs and collect 
+    the resulting profiles is also included in this class.
     """
 
     def __init__(self, inst_type, subnet, zone, price, db_manager, instances, 
@@ -124,9 +124,6 @@ class Instance():
         """
         user_data = self.customise_cloudinit()
         # Request a resource
-        print self.security_group
-        print self.subnet
-        print "Requesting now..."
         mapping = BlockDeviceMapping()
         sda1 = BlockDeviceType()
         eph0 = BlockDeviceType()
@@ -224,8 +221,8 @@ class Instance():
         Get the status of this instance from the database.
         """
         try:
-            r = self.db_manager.get_conn().execute(("select * from instance where " +
-                                     "address = '%s';") % (self.address))
+            r = self.db_manager.get_conn().execute(("select * from instance " +
+                                     "where address = '%s';") % (self.address))
 
             for rec in r:
                 self.status = rec["state"]
@@ -325,20 +322,6 @@ class Instance():
         self.set_job_status("Profiling", job['id'])
         self.job = job
 
-        # if self.exec_id < 0:
-        #     try:
-        #         # Insert the execution into the database
-        #         self.logger.debug(self.instance_id)
-        #         cmd = ("INSERT INTO execution (tool, instance) values " + 
-        #                "(%s, %s) RETURNING id") % (self.job['tool_id'], 
-        #                self.instance_id)
-        #         recs = self.dbconn.execute(cmd)
-        #         for rec in recs:
-        #             self.exec_id = rec['id']
-
-        #     except psycopg2.Error, e:
-        #         self.logger.debug("Failed to insert execution in database")
-        #         raise e
         # Build a payload to deploy the job to the service
         self.logger.debug(job['executable'])
         address = "http://%s:5000/execute" % self.address
@@ -378,14 +361,12 @@ class Instance():
         address = "http://%s:5000/exec-details/%s" % (self.address, job_id)
         try:
             r = requests.get(address)
-            print 'Requested exec details'
-            print r.text
             if r.status_code == 200:
                 # Leave once the job is done
                 self.logger.debug(r.text)
                 response = json.loads(r.text)
-                print response
-                self.db_manager.store_execution_details(self.job['id'], response)
+                self.db_manager.store_execution_details(self.job['id'], 
+                                                        response)
         except requests.exceptions.RequestException as e:
             self.logger.debug("Getting job status failed.")
             self.logger.debug(e)
@@ -399,24 +380,24 @@ class Instance():
         """
         # Get the file name of the logs
         filename = self.get_job_logs()
-        print filename
         # Since we have our own thread, process the logs in to a csv file
-        log_file_name = self.process_logs(filename)
+        log_file_name, results = self.process_logs(filename)
+
+        #Store the results in the db so they get sent back to the client
+        self.db_manager.store_results(self.job['id'], json.dumps(results))
 
         # Move the csv log back to the log directory and return that.
         log_dir = "%s/logs/" % (self.job['working_dir'])
         log_dir = log_dir.replace("//", "/")
         log_path = "%s%s" % (log_dir, log_file_name)
- #       print res_log
-        print log_file_name
-        print log_dir
+
         if os.path.exists(log_dir):
             shutil.move(log_file_name, log_dir)
 
         # Store the results in s3 as well.
         self.store_in_s3(log_file_name, log_path)
 
-        return log_path
+        return log_path, results
 
 
     def store_in_s3(self, log_file_name, log_path):
@@ -448,73 +429,22 @@ class Instance():
                 tfile.extractall(self.job['working_dir'])
             else:
                 self.logger.debug(res_file + " is not a tarfile.")
-            print res_file
             # Pull the name of the extracted directory
             filename = res_file.split(".")[0]
-            print filename
             # Get the base name of the logs (without .meta etc.)
             res = "%s/logs/%s" % (self.job['working_dir'], 
                                filename.split("/")[-1])
             res = res.replace("//", "/")
-            print res
             return res
         except Exception, e:
             print e
             raise e
-#     def get_job_logs(self):
-#         """
-#         get the logs from the aws instance.
-#         """
-#         address = "http://%s:5000/logs/%s" % (self.address, self.exec_id)
-#         try:
-#             r = requests.get(address)
-#             if r.status_code == 200:
-#                 self.logger.debug("Logs: %s" % r.text)
-#                 #Ugh, there isn't much of an scp module... so this is a bit of
-#                 #a hack.
-#                 host = 'ubuntu@%s:%s' % (self.address, r.text)
-# #                cmd_str = "'scp %s %s'" % (host, self.output_dir)
-#                 cmd_str = "scp %s %s" % (host, self.workload_directory)
-#                 cmd = ['sudo', 'su', 'galaxy', '-c', cmd_str]
-#                 self.logger.debug(" ".join(cmd))
-#                 # I put this sleep in to wait for the file to be generated
-#                 time.sleep(5)
-#                 out = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-#                 # Wait for the transfer
-#                 res = out.wait()
-#                 self.logger.debug("Got the data transferred")
-                
-#                 #add in the file name to the result
-#                 res_file = "%s%s" % (self.workload_directory, r.text.split("/")[-1])
-#                 print res_file
-#                 tfile = tarfile.open(res_file)
-#                 #untaring the file
-#                 if tarfile.is_tarfile(res_file):
-#                     # extract all contents
-#                     tfile.extractall(self.workload_directory)
-#                 else:
-#                     self.logger.debug(res_file + " is not a tarfile.")
-#                 filename = r.text.split(".")[0]
-#                 print filename
-                
-#                 res = "%s%s/%s" % (self.workload_directory, filename, 
-#                                    filename.split("/")[-1])
-#                 res = res.replace("//", "/")
-#                 print res
-#                 return res
-#         except requests.exceptions.RequestException as e:
-#             self.logger.debug("Error getting job logs")
-#             self.logger.debug(e)
-#             raise e
-
 
     def process_logs(self, filename):
         """
         Work through the logs and store the data somewhere.
         """
         #use dumplogs to get the values
-        print "pulling logs from:"
-        print filename
 
         #Add in total cpu fields
         cpu_fields = ['kernel.all.cpu.idle', 'kernel.all.cpu.user',
@@ -570,12 +500,14 @@ class Instance():
         for field in per_cpu_fields:
             for i in range(0, self.cpus):
                 name_fields.append("%s%s" % (field, i))
-        name_fields = name_fields + memory_fields + network_name_fields + disk_fields
+        name_fields = (name_fields + memory_fields + 
+                       network_name_fields + disk_fields)
 
         # Give the output csv a nice name
-        params = self.job['params'].replace('$' , '-')
-        csv_file_name = '%s%s-%s%s.csv' % (self.job['workload_name'], self.job['id'],
-                                               self.job['inst_type'], params)
+        params = "".join(self.job['params']).replace('$' , '-')
+        csv_file_name = '%s%s-%s%s.csv' % (self.job['workload_name'], 
+                                           self.job['id'], 
+                                           self.job['inst_type'], params)
         with open(csv_file_name , 'wb') as fp:
             csvfile = csv.writer(fp, delimiter=',')
             csvfile.writerows([name_fields])
@@ -591,8 +523,73 @@ class Instance():
               else:
                 break
         
-        return csv_file_name
+        # While we are here in this thread we might as well process the csv
+        # to create a response doc of cpu, memory, network, and disk usage
+        results = self.get_results(csv_file_name)
 
+        return csv_file_name, results
+
+    def get_results(self, csv_file):
+        """
+        Process the csv file to construct a results structure which can
+        be returned to the client.
+        """
+
+        cr = csv.reader(open(csv_file,"rb"))
+        head = cr.next() # to skip the header 
+
+        indices = {"kernel.all.cpu.idle" : head.index("kernel.all.cpu.idle"),
+            "kernel.all.cpu.user" : head.index("kernel.all.cpu.user"),
+            "kernel.all.cpu.sys" : head.index("kernel.all.cpu.sys"),
+            "mem.freemem" : head.index("mem.freemem"),
+            "mem.physmem" : head.index("mem.physmem"),
+            "disk.all.write_bytes" : head.index("disk.all.write_bytes"),
+            "disk.all.read_bytes" : head.index("disk.all.read_bytes"),
+            "network.interface.in.bytes0" : head.index("network.interface.in.bytes0"),
+            "network.interface.in.bytes1" : head.index("network.interface.in.bytes1"),
+            "network.interface.out.bytes0" : head.index("network.interface.out.bytes0"),
+            "network.interface.out.bytes1" : head.index("network.interface.out.bytes1")}
+
+        totals = {"kernel.all.cpu.idle" : 0,
+                  "kernel.all.cpu.user" : 0,
+                  "kernel.all.cpu.sys" : 0,
+                  "mem.freemem" : 0,
+                  "mem.physmem" : 0,
+                  "disk.all.write_bytes" : 0,
+                  "disk.all.read_bytes" : 0,
+                  "network.interface.in.bytes0" : 0,
+                  "network.interface.in.bytes1" : 0,
+                  "network.interface.out.bytes0" : 0,
+                  "network.interface.out.bytes1" : 0}
+
+        # A list of which ones should be averaged
+        divide = ["kernel.all.cpu.idle", "kernel.all.cpu.user", 
+                  "kernel.all.cpu.sys", "mem.freemem"]
+        count = 0
+        for row in cr:
+            if '?' not in row:
+                count += 1
+                for name, index in indices.iteritems():
+                    totals[name] += float(row[index])
+                totals['mem.physmem'] = float(row[indices['mem.physmem']])
+
+        for name in divide:
+            totals[name] = totals[name] / count
+
+        cpu = {'Avg_Idle' : totals["kernel.all.cpu.idle"],
+               'Avg_User' : totals["kernel.all.cpu.user"],
+               'Avg_Sys' : totals["kernel.all.cpu.sys"]}
+        memory = {'Avg_Free' : totals["mem.freemem"],
+                  'Phys_Mem' : totals["mem.physmem"]}
+        disk = {'Write_Bytes' : totals["disk.all.write_bytes"],
+                'Read_Bytes' : totals["disk.all.read_bytes"]}
+        network = {'Total_In' : (totals['network.interface.in.bytes0'] + 
+                                 totals['network.interface.in.bytes1']),
+                   'Total_Out' : (totals['network.interface.out.bytes0'] + 
+                                 totals['network.interface.out.bytes1'])}
+        results = {'cpu' : cpu, 'memory' : memory, 'disk' : disk, 
+                   'network' : network}
+        return results
 
     def get_job_stats(self, job_id):
         address = "http://%s:5000/stats/%s" % (self.address, job_id)

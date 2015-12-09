@@ -23,10 +23,10 @@ def hello_world():
 #check job status - return the condor code for this job.
 @app.route('/status/<string:val>')
 def get_status(val):
-    cmd = [ 'condor_history', '-format', '%s', 'JobStatus', '-constraint', 'ClusterId == %s' % val ]
+    cmd = [ 'condor_history', '-format', '%s', 'JobStatus',
+            '-constraint', 'ClusterId == %s' % val ]
 
     output = subprocess.Popen( cmd, stdout=subprocess.PIPE ).communicate()[0]
-    print output
     if float(output) >= 0:
         if output == '4':
             #The job is done, so stop the logger
@@ -48,16 +48,15 @@ def exec_details(val):
              5 : 'Held',
              6 : 'Submission_err'
              }
-    print 'Returning exec details'
-    cmd = [ 'condor_history', '-format', '%s,', 'JobStatus', '-format', '%s', 'RemoteWallClockTime', '-constraint', 'ClusterId == %s' % val ]
-    print cmd
+    cmd = [ 'condor_history', '-format', '%s,', 'JobStatus', '-format', '%s',
+            'RemoteWallClockTime', '-constraint', 'ClusterId == %s' % val ]
+
     output = subprocess.Popen( cmd, stdout=subprocess.PIPE ).communicate()[0]
-    print output
     res = {}
 
     exit_status = status[int(output.split(',')[0])]
-    res = {'exit_status' : exit_status, 'execution_time' : output.split(',')[1]}
-    print res
+    res = {'exit_status' : exit_status,
+           'execution_time' : output.split(',')[1]}
     return jsonify(res)
 
 
@@ -84,10 +83,12 @@ def get_logs():
 #get the monitored stats on the job.
 @app.route('/stats/<string:val>')
 def get_stats(val):
-    cmd = [ 'condor_history', '-format', 'id:%s,', 'ClusterId', '-format', 'status:%s,', 'JobStatus','-format', 'time:%s', 'RemoteWallClockTime', '-constraint', 'ClusterId == %s' % val ]
+    cmd = [ 'condor_history', '-format', 'id:%s,', 'ClusterId',
+            '-format', 'status:%s,', 'JobStatus','-format', 
+            'time:%s', 'RemoteWallClockTime', '-constraint', 
+            'ClusterId == %s' % val ]
 
     output = subprocess.Popen( cmd, stdout=subprocess.PIPE ).communicate()[0]
-    print output
     if val in output:
         return output
     else:
@@ -95,20 +96,16 @@ def get_stats(val):
 
 def create_directories(working_dir):
     directory = "/ephemeral/0/working-%s" % working_dir
-    print directory
     if not os.path.exists(directory):
         os.makedirs(directory)
-    # submit_line = "chmod 777 %s" % (directory)
-    # submit = subprocess.Popen( ( ['sudo','su','root','-c',submit_line ] ), stdout=subprocess.PIPE, stderr=subprocess.STDOUT )
-    # s_out, s_err = submit.communicate()
-    print 'should have made it'
     return directory
 
 
 
 def create_submission_files(execution, directory, executable):
-
-
+    """
+    Create the submission file for condor.
+    """
     ofile = "%s/test%s.out" % (directory, execution)
     efile = "%s/test%s.err" % (directory, execution)
     user_log = "%s/test%s.log" % (directory, execution)
@@ -166,7 +163,9 @@ def submit_job(submit_file):
     job_id = None
     try:
         submit_line = "condor_submit %s" % submit_file
-        submit = subprocess.Popen( ( ['sudo','su','ubuntu','-c',submit_line ] ), stdout=subprocess.PIPE, stderr=subprocess.STDOUT )
+        submit = subprocess.Popen((['sudo','su','ubuntu','-c',submit_line]),
+                                   stdout=subprocess.PIPE, 
+                                   stderr=subprocess.STDOUT)
         s_out, s_err = submit.communicate()
         if submit.returncode == 0:
             match = re.search( 'submitted to cluster (\\d+).', s_out )
@@ -174,9 +173,6 @@ def submit_job(submit_file):
                 s_out = 'Failed to find job id from condor_submit'
             else:
                 job_id = match.group( 1 )
-        print s_out
-        print s_err
-        print submit.returncode
         return job_id
     except Exception, e:
         print e
@@ -200,33 +196,24 @@ def handle_request():
             working_dir = request.form['working_dir']
             parameters = request.form['parameters']
 
-            print "making directory"
             # create the working directory for this job
             directory = create_directories(execution)
 
-            print "Copying contents to working dir"
             copy_working_dir_contents(working_dir, directory)
 
-            # print "Modifying executable to use working dir"
-            # exec_file = create_shell_script(execution, directory, executable)
             exec_file = "%s/%s" % (directory, executable.split('/')[-1])
 
-            print "Creating submit files"
-            submit_file = create_submission_files(execution, directory, exec_file)
+            submit_file = create_submission_files(execution, directory, 
+                                                  exec_file)
 
-            print 'Adding the cd to home dir'
             modify_exec_file(execution, directory, exec_file, parameters)
-
             #Kill any logs that are currently running
             terminate_process("pmlogger")
 
-            print "Starting logger"
             start_logging(execution)
-            print "Submitting job"
             job_id = submit_job(submit_file)
-            print "Submitted job now"
             if job_id is None:
-                print "condor_submit failed for job %s: %s" % (job_wrapper.get_id_tag(), s_out)
+                print "condor_submit failed for job"
                 return
 
             return job_id
@@ -239,16 +226,16 @@ def start_logging(name):
     if not os.path.exists(dest):
         os.makedirs(dest)
     log = "%s/Job-%s" % (dest, name)
-    print "Creating log: %s" % log
     try:
-        cmd = ['pmlogger', '-c', '/etc/pcp/pmlogger/config.default', '-t', '5', log]
-        submit = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE) 
+        cmd = ['pmlogger', '-c', '/etc/pcp/pmlogger/config.default', 
+               '-t', '5', log]
+        submit = subprocess.Popen(cmd, stdout=subprocess.PIPE, 
+                                  stderr=subprocess.PIPE, 
+                                  stdin=subprocess.PIPE) 
     except Exception, e:
         print "Failed to start logging"
         print e
         raise e
-
-    print "Started the logger?"
 
 
 def terminate_process(name):

@@ -61,8 +61,6 @@ class Client(object):
 
         print self.job_desc
 
-        sys.exit(0)
-
         print "Creating profiling dir"
         # Create a workload request
         profiling_dir = self.create_workload()
@@ -111,11 +109,11 @@ class Client(object):
 
         # bit of a workaround. It wouldn't let me transfer just the contents
         # of the directory, so lets just change the working dir
-        working_dir = '%s/%s/' % (profiling_dir, self.input_dir.split('/')[-2])
+        working_dir = '%s/%s/' % (profiling_dir, self.job_desc['input_dir'].split('/')[-2])
 
         payload = {'workload' : self.workload_id,
                    'working_dir' : working_dir,
-                   'description' : self.job_desc}
+                   'description' : json.dumps(self.job_desc)}
         try:
             r = requests.post(address, payload)
             print "Received: %s from the profiler" % r.text
@@ -131,8 +129,7 @@ class Client(object):
         address = "http://%s:%s/create-workload" % (self.profiler_address,
                                                     self.profiler_port)
         payload = {'username': self.username, 'access_key': self.access_key,
-                   'secret_key': self.secret_key, 'key_pair': self.key_pair,
-                   'executable' : self.executable}
+                   'secret_key': self.secret_key, 'key_pair': self.key_pair}
         print payload
         try:
             r = requests.post(address, payload)
@@ -151,13 +148,13 @@ class Client(object):
 
         dest = 'ubuntu@%s:%s/' % (self.profiler_address, dest_dir)
         ssh_key = ""
-        if os.path.exists(self.input_dir):
+        if os.path.exists(self.job_desc['input_dir']):
             cmd = ['scp']
             if self.ssh_key is not None:
             	cmd.append('-i')
             	cmd.append(self.ssh_key)
             cmd.append('-r')
-            cmd.append('%s' % self.input_dir)
+            cmd.append('%s' % self.job_desc['input_dir'])
             cmd.append(dest)
             cmd_str = " ".join(cmd)
             print cmd_str

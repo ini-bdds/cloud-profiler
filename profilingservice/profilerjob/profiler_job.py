@@ -23,39 +23,36 @@ from instance import Instance
 
 class ProfilerJobThread(Thread):
 
-    def __init__(self, config_file, job_id, inst_type, params, name):
-        print 'Starting a profiler job object'
-        print config_file
+    def __init__(self, config_file, job_id, inst_type, params, job_desc):
         try:
             self.load_config(config_file)
             self.job_id = job_id
             self.inst_type = inst_type
-            print 'ran load_config'
             self.logger = logging.getLogger('profile')
-            print 'got logger'
             self.params = params
-            self.workload_name = name
-            print 'sorting out the logger'
-            print self.logger.handlers
+            self.workload_name = job_desc['name']
             self.db_manager = DBManager()
+            self.job_desc = job_desc
+            for inst in self.job_desc['instance_types']:
+                if inst['type'] == self.inst_type:
+                    self.inst_desc = inst
+                    break
         except Exception, e:
             print e
         try:
             if not self.logger.handlers:
-                print 'handlers not alreadt set'
                 hdlr = logging.FileHandler('/home/ubuntu' +
                                            '/profiler/profiles.log')
-                formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-                hdlr.setFormatter(formatter)
+                fm = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+                hdlr.setFormatter(fm)
                 self.logger.addHandler(hdlr)
                 self.logger.setLevel(logging.DEBUG)
                 consoleHandler = logging.StreamHandler()
-                consoleHandler.setFormatter(formatter)
+                consoleHandler.setFormatter(fm)
                 self.logger.addHandler(consoleHandler)
 
         except Exception, e:
             print e
-        print 'running init'
         Thread.__init__(self)
 
 
@@ -71,7 +68,6 @@ class ProfilerJobThread(Thread):
 
         self.AWSAccessKeyId = config.get('AWS', 'keyid')
         self.AWSSecretKey = config.get('AWS', 'secret')
-        print 'pulled aws stuff from config'
 
     def run(self):
         """
@@ -79,7 +75,6 @@ class ProfilerJobThread(Thread):
         of managing an aws instance, getting the workload executed, collecting
         stats and retrieving the profile.
         """
-        print 'Started the thread running'
         # Start by finding or creating an instance to run on. We have
         # the job_id, so get all of the job information from the database
         job_info = self.get_job_info()
@@ -115,8 +110,9 @@ class ProfilerJobThread(Thread):
             rows = self.db_manager.get_conn().execute((
                 "select profile_job.id as pid, profile_job.workload_id, " +
                 "profile_job.work_instance_id, profile_job.execution_time, " +
-                "profile_job.exit_status, profile_job.status, workload.id as wid, " +
-                "workload.executable, workload.working_dir, workload.client_id " +
+                "profile_job.exit_status, profile_job.status, " +
+                "workload.id as wid, " +
+                "workload.working_dir, workload.client_id " +
                 "from profile_job, workload where profile_job.id = %s and " +
                 "workload.id = profile_job.workload_id") % self.job_id)
             for row in rows:
@@ -126,13 +122,12 @@ class ProfilerJobThread(Thread):
                         'execution_time' :  row['execution_time'],
                         'exit_status' :  row['exit_status'],
                         'status' :  row['status'],
-                        'executable' :  row['executable'],
                         'working_dir' :  row['working_dir'],
                         'client_id' :  row['client_id'],
+                        'executable' :  self.job_desc['executable'],
                         'params' : self.params,
                         'inst_type' : self.inst_type,
                         'workload_name' : self.workload_name}
-                        # Sneakily add in the paramters to replace in the exec file here
                 return info
         except psycopg2.Error:
             self.logger.exception("Error getting inst types from database.")
@@ -160,7 +155,8 @@ class ProfilerJobThread(Thread):
                      "instance_type.id") % i.private_dns_name)
 
                 for rec in records:
-                    new_inst = Instance(rec['type'], '', rec['zone'], rec['price'],
+                    new_inst = Instance(rec['type'], '', rec['zone'],
+                                        rec['price'],
                                         self.db_manager, instance_types, 
                                         i.private_dns_name, rec['wid'])
                     instances.append(new_inst)
@@ -181,9 +177,6 @@ class ProfilerJobThread(Thread):
 
         # Check if one of the existing resources will do the job
         for inst in instances:
-            print 'this is the problem...'
-            print inst.type
-            print inst_type
             if inst.type == inst_type:
                 return inst
 
@@ -192,7 +185,6 @@ class ProfilerJobThread(Thread):
         self.logger.debug("no istances found, so starting a new one.")
         #no instances of this type exist, so start one
         zone = self.get_cheapest_spot_zone(inst_type)
-        print zone
         subnet = self.get_subnet_id(zone)
         cpus = 0
         instance_types = self.load_instances()
@@ -200,10 +192,11 @@ class ProfilerJobThread(Thread):
             if ins.type == inst_type:
                 cpus = ins.cpus
                 break
-        print "SUBNET = %s" % subnet
         # Create an instance object from this data
-        new_inst = Instance(inst_type, subnet, zone, 1.5, self.db_manager, 
+        new_inst = Instance(inst_type, subnet, zone, 
+                            self.inst_desc['bid'], self.db_manager, 
                             instance_types)
+
 
         # Now launch the instance and wait for it to come up
         new_inst.launch()
@@ -229,97 +222,6 @@ class ProfilerJobThread(Thread):
         self.logger.debug(instance_types)
 
         return instance_types
-
-
-    # def run(self):
-    #     """
-    #     Execute the profiler. This should create a thread per job and
-    #     execute each workload.
-    #     """
-    #     #process the input file
-    #     self.jobs = self.process_input_file()
-
-    #     self.get_tool_ids(self.jobs)
-
-    #     #find any existing instances
-    #     self.get_instances()
-
-
-    #     #for each job create a job handler
-    #     handlers = []
-    #     for job in self.jobs:
-    #         self.logger.debug("Starting thread")
-    #         jobHandler = threading.Thread(target=self.start_job_handler, 
-    #                                       args=[job])
-    #         jobHandler.start()
-    #         handlers.append(jobHandler)
-    #         time.sleep(5)
-
-    #     for handler in handlers:
-    #         handler.join()
-
-    #     #self.launch_instances()
-
-    #     #print self.instances
-
-    #     #for instance in self.instances:
-    #     #    instance.launch()
-
-    #     #self.deploy_jobs(self.jobs, self.instances)
-
-
-
-    # def process_input_file(self):
-    #     """
-    #     Load all of the jobs from the input file.
-    #     """
-    #     jobs = []
-    #     with open(self.input_file) as f:
-    #         content = f.readlines()
-    #         for line in content:
-    #             if len(line) > 0 and line[0] != "#":
-    #                 job = {}
-    #                 param = line.split(",")
-    #                 for val in param:
-    #                     job.update({val.split(":")[0].strip() :
-    #                                 val.split(":")[1].strip()})
-    #                 job.update({"status" : "created"})
-    #                 jobs.append(job)
-    #     return jobs
-
-
-    # def get_tool_ids(self, jobs):
-    #     """
-    #     Get the tool data from the database.
-    #     """
-
-    #     try:
-    #         for job in jobs:
-    #             records = self.dbconn.execute(("SELECT * FROM tool where " +
-    #                                           "executable = \'%s\' and " +
-    #                                           "parameters = \'%s\'") % 
-    #                                           (job['executable'], 
-    #                                           job['parameters']))
-    #             for rec in records:
-    #                 job['tool_id'] = rec['id']
-    #             if 'tool_id' not in job or job['tool_id'] == None:
-    #                 #this tool and parameter combination is not in the database 
-    #                 #so add it
-    #                 db = self.dbconn.execute(("INSERT INTO tool (executable, " +
-    #                                     "parameters) values (\'%s\', \'%s\') " +
-    #                                     "RETURNING id") % (job['executable'],
-    #                                     job['parameters']))
-    #                 for id_val in db:
-    #                     job['tool_id'] = id_val['id']
-    #                     break
-    #             logger.debug("Got tool id: %s" % job['tool_id'])
-    #     except psycopg2.Error, e:
-    #         logger.error("Failed to get tool id's from database. %s" % e)
-    #         raise e
-
-
-
-
 
 
     def start_job_handler(self, job):
@@ -364,7 +266,6 @@ class ProfilerJobThread(Thread):
         """
         Select the cheapest instance zone to launch in.
         """
-        print "working out cheapest zone for %s" % inst_type
         utc = timezone('UTC')
         utc_time = datetime.datetime.now(utc)
         now = utc_time.strftime('%Y-%m-%d %H:%M:%S')
@@ -399,19 +300,13 @@ class ProfilerJobThread(Thread):
         out = subprocess.Popen(cmd, stdout=subprocess.PIPE).communicate()[0]
         json_res = json.loads(out)
 
-        print "DESIRED ZONE = %s" % zone
-
         for key, val in json_res.iteritems():
             for vpc in val:
                 # Check if 'worker-subnet-*' is in the tags. Otherwise it will
                 # capture the headnode subnets as well.
-                print val
                 #if 'worker-subnet' in vpc['Tags'][0]['Value']:
                 if '172.30' in vpc['CidrBlock']:
-                    print '172.30 is in the cidrblock'
                     if zone == vpc['AvailabilityZone']:
-                        print 'the zone = AvailabilityZone'
-                        print vpc['SubnetId']
                         # Should this return SubnetId?
                         return vpc['SubnetId']
 

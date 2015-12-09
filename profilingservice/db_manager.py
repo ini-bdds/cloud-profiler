@@ -4,6 +4,7 @@ import os
 import ConfigParser
 import psycopg2
 import sqlalchemy
+import json
 
 class DBManager(object):
 
@@ -112,7 +113,7 @@ class DBManager(object):
         return workload_id
 
 
-    def update_workload_dir(self, work_id, working_dir, executable):
+    def update_workload_dir(self, work_id, working_dir, executable=None):
         """
         Upload the workload to include the working working_dir
         """
@@ -139,7 +140,8 @@ class DBManager(object):
         """
         
         cmd = ("SELECT profile_job.execution_time, profile_job.exit_status," +
-               "profile_job.status, instance_type.type from profile_job, " +
+               "profile_job.status, instance_type.type, profile_job.results " +
+               "from profile_job, " +
                "work_instance, instance_type where workload_id = %s and " +
                "profile_job.work_instance_id = work_instance.id and " +
                "instance_type.id = work_instance.type") % (workload_id)
@@ -149,10 +151,15 @@ class DBManager(object):
             r = self.dbconn.execute(cmd)
 
             for res in r:
+                results = ""
+                if len(res['results']) > 1:
+                    results = json.loads(res['results'])
+
                 profile_res.append({'instance' : res['type'],
                                     'status' : res['status'],
                                     'exec_time' : res['execution_time'],
-                                    'exit_status' : res['exit_status']})
+                                    'exit_status' : res['exit_status'],
+                                    'results' : results})
                 print res
         except psycopg2.Error, e:
             print e
@@ -276,6 +283,21 @@ class DBManager(object):
         cmd = ("UPDATE profile_job set execution_time = %s, exit_status = " +
                "'%s' where id = %s") % (details['execution_time'],
                                         details['exit_status'], job_id)
+
+        try:
+            r = self.dbconn.execute(cmd)
+        except psycopg2.Error, e:
+            self.logger.debug("Failed to update exec details in db")
+            raise e
+
+    def store_results(self, job_id, results):
+        """
+        Update the job record to include the json description of the
+        results
+        """
+        results.replace("'", '"')
+        cmd = ("UPDATE profile_job set results = \'%s\' " +
+               "where id = %s") % (results, job_id)
 
         try:
             r = self.dbconn.execute(cmd)
