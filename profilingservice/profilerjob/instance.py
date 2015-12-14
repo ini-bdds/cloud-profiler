@@ -17,7 +17,7 @@ from boto.s3.key import Key
 from boto.ec2.blockdevicemapping import BlockDeviceType
 from boto.ec2.blockdevicemapping import BlockDeviceMapping
 from distutils.dir_util import copy_tree
-
+from influxdb.influxdb08 import InfluxDBClient
 from string import Template
 from db_manager import DBManager
 
@@ -31,7 +31,7 @@ class Instance():
     """
 
     def __init__(self, inst_type, subnet, zone, price, db_manager, instances, 
-                 address = None, instance_id = 0):
+                 work_type, address = None, instance_id = 0):
         self.logger = logging.getLogger('profile')
         self.type = inst_type
         self.subnet = subnet
@@ -262,7 +262,12 @@ class Instance():
         """
         Periodically poll the service to check when the job is done.
         """
+
         address = "http://%s:5000/status/%s" % (self.address, job_id)
+
+        if self.work_type = "Docker":
+
+            address = "http://%s:5000/docker_status/%s" % (self.address, job_id)
 
         self.logger.debug(address)
         while True:
@@ -273,7 +278,7 @@ class Instance():
                 if r.status_code == 200:
                     # Leave once the job is done
                     self.logger.debug(r.text)
-                    if r.text == "4":
+                    if r.text == "4" or r.text == "Finished":
                         self.logger.debug("Job finished!")
                         return
                     else:
@@ -324,7 +329,10 @@ class Instance():
 
         # Build a payload to deploy the job to the service
         self.logger.debug(job['executable'])
+
         address = "http://%s:5000/execute" % self.address
+        if job['type'] == 'Docker':
+            address = "http://%s:5000/execute_docker" % self.address
         payload = {"executable" : job['executable'], 
                    "execution" : job['id'],
                    "working_dir" : job['working_dir'],
@@ -345,8 +353,8 @@ class Instance():
         self.wait_for_job(job_id)
 
         self.set_status("Finished")
-
-        self.store_execution_details(job_id)
+        if self.work_type != "Docker":
+            self.store_execution_details(job_id)
 
         return job_id
 
@@ -356,7 +364,7 @@ class Instance():
         Store the job details from the execution, e.g. exit status and 
         execution time.
         """
-
+       
         # Get the execution details from the service
         address = "http://%s:5000/exec-details/%s" % (self.address, job_id)
         try:
@@ -382,6 +390,11 @@ class Instance():
         filename = self.get_job_logs()
         # Since we have our own thread, process the logs in to a csv file
         log_file_name, results = self.process_logs(filename)
+
+        # If it is a docker thing, grab those results too and add them in
+        if self.work_type == "Docker":
+            stats = self.get_docker_stats()
+            results['Docker'] = stats
 
         #Store the results in the db so they get sent back to the client
         self.db_manager.store_results(self.job['id'], json.dumps(results))
@@ -612,3 +625,21 @@ class Instance():
             self.logger.debug(e)
 
         return res
+
+    def get_docker_stats(self):
+        """
+        Use the job id (from the database, not from the execution) to query 
+        the database of the instance
+        """
+        query = ("select * from stats where container_name = " + 
+                    "'docker_%s'" % self.job['id'] )
+        # Once I work out how this works I can tidy this up so it returns
+        # some useful information.
+        try:
+            client = InfluxDBClient(self.address,
+                                    8086, 'root', 'root', 'cadvisor')
+            result = client.query(query)
+            return result
+        except Exception, e:
+            print e
+            

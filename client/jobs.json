@@ -1,18 +1,15 @@
 {
 	"instance_types": [
-	{"override": ["$threads=8"],
+	{"override": [],
 	 "bid": "1", 
 	 "type": "r3.xlarge", 
 	 "acquisition": "spot"
-	 }, 
-	 {"override": ["$threads=8"], 
-	 "bid": "1", 
-	 "type": "c3.2xlarge", 
-	 "acquisition": "spot"}
+	 }
 	 ], 
-	 "executable": "example-workload.sh", 
+	 "executable": "-d ubuntu:14.04 /bin/sh -c 'echo hello world; sleep 10; echo goodbye'", 
 	 "workloads": {}, 
-	 "name": "Example Workload", 
+	 "name": "Docker Example", 
+	 "type" : "Docker",
 	 "configurations": {},
-	 "input_dir": "/home/ubuntu/profiler/client/example-workload/"
+	 "input_dir": "/home/ubuntu/profiler/client/docker-workload/"
 }

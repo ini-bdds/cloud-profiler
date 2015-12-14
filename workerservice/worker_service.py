@@ -36,6 +36,26 @@ def get_status(val):
         return "Job %s not in history" % val
 
 
+
+@app.route('/docker_status/<string:val>')
+def get_docker_status(val):
+"""
+check job status - return the true or false if the job is running
+"""
+    cmd = ['docker', 'inspect', '-f', '{{.State.Running}}', val]
+
+    output = subprocess.Popen( cmd, stdout=subprocess.PIPE ).communicate()[0]
+    if float(output) >= 0:
+        if output == 'false':
+            #The job is done, so stop the logger
+            terminate_process("pmlogger")
+            return 'Finished'
+        else:
+            return 'Running'
+    else:
+        return "Job %s not in history" % val
+
+
 @app.route('/exec-details/<string:val>')
 def exec_details(val):
 
@@ -58,6 +78,8 @@ def exec_details(val):
     res = {'exit_status' : exit_status,
            'execution_time' : output.split(',')[1]}
     return jsonify(res)
+
+
 
 
 @app.route('/logs', methods=['POST'])
@@ -178,6 +200,26 @@ def submit_job(submit_file):
         print e
         raise e
 
+def submit_docker_job(executable, execution):
+    job_id = None
+    try:
+        submit_line = "docker run --name docker_%s %s" % (execution, executable)
+        submit = subprocess.Popen((['sudo','su','ubuntu','-c',submit_line]),
+                                   stdout=subprocess.PIPE, 
+                                   stderr=subprocess.STDOUT)
+        s_out, s_err = submit.communicate()
+        if submit.returncode == 0:
+            # Just grab the output, whihc is hopefully a string id
+            match = s_out
+            if match is None:
+                s_out = 'Failed to find job id from docker run'
+            else:
+                job_id = match
+        return job_id
+    except Exception, e:
+        print e
+        raise e
+
 def copy_working_dir_contents(working_dir, directory):
     """
     Copy the cotents of the working diretory to the newly
@@ -214,6 +256,36 @@ def handle_request():
             job_id = submit_job(submit_file)
             if job_id is None:
                 print "condor_submit failed for job"
+                return
+
+            return job_id
+    except Exception, e:
+        print e
+        raise e
+
+
+@app.route('/execute_docker', methods=['POST'])
+def handle_docker_request():
+    try:
+
+        if request.method == 'POST':
+            executable = request.form['executable']
+            execution = request.form['execution']
+            working_dir = request.form['working_dir']
+            parameters = request.form['parameters']
+
+            # create the working directory for this job
+            directory = create_directories(execution)
+
+            copy_working_dir_contents(working_dir, directory)
+
+            #Kill any logs that are currently running
+            terminate_process("pmlogger")
+
+            start_logging(execution)
+            job_id = submit_docker_job(executable, execution)
+            if job_id is None:
+                print "docker submit failed for job"
                 return
 
             return job_id

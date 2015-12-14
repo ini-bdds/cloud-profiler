@@ -13,11 +13,13 @@ import subprocess
 
 import requests
 
+from influxdb.influxdb08 import InfluxDBClient
 
 class Client(object):
 
     def __init__(self):
         self.load_config()
+
 
 
     def load_config(self):

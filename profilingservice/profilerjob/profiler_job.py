@@ -37,6 +37,8 @@ class ProfilerJobThread(Thread):
                 if inst['type'] == self.inst_type:
                     self.inst_desc = inst
                     break
+
+            self.work_type = self.job_desc['type']
         except Exception, e:
             print e
         try:
@@ -127,7 +129,8 @@ class ProfilerJobThread(Thread):
                         'executable' :  self.job_desc['executable'],
                         'params' : self.params,
                         'inst_type' : self.inst_type,
-                        'workload_name' : self.workload_name}
+                        'workload_name' : self.workload_name,
+                        'work_type' : self.work_type}
                 return info
         except psycopg2.Error:
             self.logger.exception("Error getting inst types from database.")
@@ -157,7 +160,8 @@ class ProfilerJobThread(Thread):
                 for rec in records:
                     new_inst = Instance(rec['type'], '', rec['zone'],
                                         rec['price'],
-                                        self.db_manager, instance_types, 
+                                        self.db_manager, instance_types,
+                                        self.work_type, 
                                         i.private_dns_name, rec['wid'])
                     instances.append(new_inst)
         except psycopg2.Error, e:
@@ -195,7 +199,7 @@ class ProfilerJobThread(Thread):
         # Create an instance object from this data
         new_inst = Instance(inst_type, subnet, zone, 
                             self.inst_desc['bid'], self.db_manager, 
-                            instance_types)
+                            instance_types, self.work_type)
 
 
         # Now launch the instance and wait for it to come up
@@ -256,10 +260,10 @@ class ProfilerJobThread(Thread):
         inst.handle_logs()
 
         inst.set_status("Idle")
-
         stats = inst.get_job_stats(job_id)
 
         self.logger.debug(stats)
+
 
 
     def get_cheapest_spot_zone(self, inst_type):
