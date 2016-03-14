@@ -48,7 +48,4 @@ Provided everything goes well the resulting logs of the profiling service will b
 
 Contact
 
-If you think any of this may be useful, please feel free to contact me at ryan@ecs.vuw.ac.nz. The profiler is still somewhat complicated to set up and get running, so I am more than happy to field questions and help out where I can.
-
-Thanks,
-Ryan
+If you think any of this may be useful, please feel free to contact us at ryan@ecs.vuw.ac.nz and madduri@uchicag.edu.
