@@ -48,4 +48,4 @@ Provided everything goes well the resulting logs of the profiling service will b
 
 Contact
 
-If you think any of this may be useful, please feel free to contact us at ryan@ecs.vuw.ac.nz and madduri@uchicag.edu.
+Please feel free to contact us at ryan@ecs.vuw.ac.nz and madduri@uchicag.edu. This work is supported by NIH Grants 5U54GM114838-02 and 1U54EB020406-01 
